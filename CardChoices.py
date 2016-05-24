@@ -24,33 +24,71 @@
 import datetime
 import os
 
-
 class DeckList:
 	# A DeckList is a dictionary of cards in the maindeck and a dictionary of cards in the sideboard.
 
 	def __init__(self):
-		self.date = datetime.date(2000,1,1)
+		self.date = ''
 		self.event = ''
 		self.pilot = ''
+		self.deckname = ''
+		self.place = ''
 		self.maindeck = {}
 		self.sideboard = {}
+		self.seventyfive = {}
 
 	def __repr__(self):
-		outputString = 'Main deck: \n'
+		outputString = ''
+
+		outputString += self.deckname + ' '
+		outputString += 'piloted by ' + self.pilot + ' '
+		outputString += 'at ' + self.event + ' '
+		outputString += 'on ' + self.date + '\n'
+
+		outputString += 'Main deck: \n'
 		for cardname in self.maindeck:
-			outputString = outputString + self.maindeck[cardname] + 'x ' + cardname + '\n'
-		outputString = outputString + 'Sideboard: \n'
+			outputString += str(self.maindeck[cardname]) + 'x ' + cardname + '\n'
+		outputString += 'Sideboard: \n'
 		for cardname in self.sideboard:
-			outputString = outputString + self.sideboard[cardname] + 'x ' + cardname + '\n'
+			outputString += str(self.sideboard[cardname]) + 'x ' + cardname + '\n'
+		outputString += 'Seventy-five: \n'
+		for cardname in self.seventyfive:
+			outputString += str(self.seventyfive[cardname]) + 'x ' + cardname + '\n'
+
+
 		return outputString
 
 	def addmaindeckcard(self, cardname, number):
-		self.maindeck[cardname] = number
-		return True
+		self.maindeck[cardname] = int(number)
+		self.addtoseventyfive(cardname, number)
 
 	def addsideboardcard(self, cardname, number):
-		self.sideboard[cardname] = number
-		return True
+		self.sideboard[cardname] = int(number)
+		self.addtoseventyfive(cardname, number)
+
+	def addtoseventyfive(self, cardname, number):
+		if cardname in self.seventyfive:
+			self.seventyfive[cardname] += int(number)
+		else:
+			self.seventyfive[cardname] = int(number)
+
+
+def distance(decklist1, decklist2):
+	# How many cards do you have to change to get from decklist 1 to decklist 2?
+	distance = 0
+
+	for card in decklist1.seventyfive:
+		if card in decklist2.seventyfive:
+			distance += (abs(decklist1.seventyfive[card] - decklist2.seventyfive[card]))
+		else:
+			distance += decklist1.seventyfive[card]
+	for card in decklist2.seventyfive:
+		if card not in decklist1.seventyfive:
+			distance += decklist2.seventyfive[card]
+	
+	distance = distance/2
+
+	return distance
 
 
 
@@ -70,6 +108,32 @@ def parseDecklist(filename):
 		# If we find the sideboard indicator, then trip the flag so future cards will appear in the sideboard.
 		if line[0:43] == '<h3 class="decklist_heading">Sideboard</h3>':
 			maindeck_flag = False
+
+		# If we find the name of the deck, use that.
+		if line[0:27] == '<header class="deck_title">':
+			beginning_of_deckname = line.find('">',28)+2
+			end_of_deckname = line.find('</a>')
+			decklist.deckname = line[beginning_of_deckname:end_of_deckname]
+
+		# If we find the name of the pilot, use that.
+		if line[0:28] == '<header class="player_name">':
+			beginning_of_pilot = line.find('">',29)+2
+			end_of_pilot = line.find('</a>')
+			decklist.pilot = line[beginning_of_pilot:end_of_pilot]
+
+		# If we find the event line, use that too.
+		if line.find('Place at <a href') != -1:
+			end_of_place = line.find(' at <a href')
+			decklistplace = line[:end_of_place]
+
+			start_of_event = line.find('<a href')+11
+			end_of_event = line.find('</a>')
+			decklist.event = line[start_of_event:end_of_event]
+
+			start_of_date = line.find('</a>')+8
+			end_of_date = line.find(' </header')
+			decklist.date = line[start_of_date:end_of_date]
+
 
 		# Many cards appear on the same line. As a result, we will keep track of where we are in the line with the scanning_position.
 		scanning_position = 1   
@@ -98,10 +162,7 @@ def parseDecklist(filename):
 				decklist.addsideboardcard(cardname, number)
 
 			# Now move on beyond the previous indicator to see if there are more cards on this line.
-			scanning_position = position_of_indicator + 1
-
-
-	print(decklist)		
+			scanning_position = position_of_indicator + 1	
 	
 	return decklist
 
@@ -130,8 +191,40 @@ def getDeckDirectory():
 if __name__ == "__main__":
 
 	deckdirectory = getDeckDirectory()
+	listofDecklists = []
 
+	# Go through and parse all the decklists in the folder.
 	for (i, deckfile) in enumerate(deckdirectory):
-		print(deckfile)
 		decklist = parseDecklist(deckfile)
-		break
+		listofDecklists.append(decklist)
+
+	# Now find which cards are actually mentioned, keeping track of how often they are mentioned.
+	cards = {}
+	for decklist in listofDecklists:
+		for card in decklist.maindeck.keys():
+			if card not in cards: 
+				cards[card] = decklist.maindeck[card]
+			else:
+				cards[card] += decklist.maindeck[card]
+		for card in decklist.sideboard.keys():
+			if card not in cards: 
+				cards[card] = decklist.sideboard[card]
+			else:
+				cards[card] += decklist.sideboard[card]
+	
+	# Print the average decklist.
+	for card in sorted(cards, key=cards.__getitem__, reverse=True):
+		print(str(round(cards[card]/len(deckdirectory))) + ' ' + card)
+
+
+	# Now let's do a distance matrix.
+	maxmatrixsize = 1000
+	matrix = []
+	for (i, decklist1) in enumerate(listofDecklists):
+		if i < maxmatrixsize:
+			# print(decklist1)
+			row = []
+			for (j, decklist2) in enumerate(listofDecklists):
+				if j < maxmatrixsize:
+					row.append(distance(decklist1, decklist2))
+			matrix.append(row)
